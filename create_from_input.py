@@ -283,8 +283,6 @@ def select_discipline_filter_by_name(page, discipline_name):
                 if (
                     wanted == option_text_cmp
                     or wanted == title_cmp
-                    or wanted in option_text_cmp
-                    or wanted in title_cmp
                 ):
                     log(f"Выбрана дисциплина в фильтре: {option_text}")
                     select.select_option(value)
@@ -334,7 +332,7 @@ def get_filtered_row(page, item):
     log(f"Ищу строку РПД: {item['discipline']} / {item['admission_year']}")
 
     rows = page.locator("tbody tr")
-    rows.first.wait_for(state="attached", timeout=10000)
+    rows.first.wait_for(state="attached", timeout=5000)
 
     for i in range(rows.count()):
         row = rows.nth(i)
@@ -391,9 +389,10 @@ def extract_years_from_copy_option(text, title):
 
 def select_copy_source(page1, item):
     log("Выбираю источник копирования")
-    log("Правило: только дисциплина → самый новый учебный год → самый новый год набора")
+    log("Правило: только дисциплина → НЕ текущий учебный год → самый новый учебный год → самый новый год набора")
 
     wanted_discipline = normalize_for_compare(item["discipline"])
+    current_study_year = item["study_year"]
 
     copy_select = page1.get_by_role("combobox").nth(1)
     copy_select.locator("option").first.wait_for(state="attached", timeout=10000)
@@ -425,6 +424,13 @@ def select_copy_source(page1, item):
             log(f"Пропускаю: не смог извлечь годы из варианта: {text}")
             continue
 
+        if study_year == current_study_year:
+            log(
+                f"Пропускаю источник из текущего учебного года "
+                f"{study_year}, чтобы не копировать РПД саму в себя: {text}"
+            )
+            continue
+
         log(
             f"Кандидат: учебный_год={study_year}, "
             f"год_набора={admission_year}, value={value}, text={text}"
@@ -438,13 +444,15 @@ def select_copy_source(page1, item):
         })
 
     if not candidates:
-        log("Не найдено кандидатов по названию дисциплины")
+        log("Не найдено кандидатов по названию дисциплины вне текущего учебного года")
         log("Доступные варианты для копирования:")
 
         for idx, item_text in enumerate(available, start=1):
             log(f"  {idx}. {item_text}")
 
-        raise Exception(f"Не найден источник копирования: {item['discipline']}")
+        raise Exception(
+            f"Не найден источник копирования вне текущего учебного года: {item['discipline']}"
+        )
 
     candidates.sort(
         key=lambda c: (
