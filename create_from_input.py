@@ -181,11 +181,11 @@ def fill_create_filters(page, item):
 
     log(f"Направление: {item['direction_code']}")
     page.get_by_role("combobox").nth(1).select_option(item["direction_code"])
-    page.wait_for_timeout(1000)
+    page.wait_for_timeout(500)
 
     log(f"Учебный год: {item['study_year']}")
     page.get_by_role("combobox").nth(2).select_option(item["study_year"])
-    page.wait_for_timeout(1000)
+    page.wait_for_timeout(500)
 
     log(f"ООП: {item['program_name']}")
     select_option_by_text(
@@ -197,7 +197,7 @@ def fill_create_filters(page, item):
 
     log(f"Год набора: {item['admission_year']}")
     page.get_by_role("combobox").nth(4).select_option(item["admission_year"])
-    page.wait_for_timeout(1000)
+    page.wait_for_timeout(500)
 
     plan_select = page.locator("select").nth(5)
     select_first_real_option(plan_select, "учебный план")
@@ -298,11 +298,15 @@ def select_discipline_filter_by_name(page, discipline_name):
 def set_user_program_filters_and_get_list(page, item):
     log("Жду таблицу РПД")
     page.locator("table").first.wait_for(state="visible", timeout=30000)
-    page.wait_for_timeout(2000)
+    page.wait_for_timeout(1500)
 
     log("Выставляю фильтры в списке РПД")
 
     selects = page.locator("select.form-control.form-control-sm")
+
+    direction_set = False
+    study_year_set = False
+    admission_year_set = False
 
     for i in range(selects.count()):
         select = selects.nth(i)
@@ -311,43 +315,90 @@ def set_user_program_filters_and_get_list(page, item):
         if "Выберите напр-е" in text:
             log(f"Фильтр направление: {item['direction_code']}")
             select.select_option(item["direction_code"])
+            direction_set = True
+            page.wait_for_timeout(300)
 
         elif "Выберите учебный год" in text:
             log(f"Фильтр учебный год: {item['study_year']}")
             select.select_option(item["study_year"])
+            study_year_set = True
+            page.wait_for_timeout(300)
 
         elif "Выберите год" in text:
             log(f"Фильтр год набора: {item['admission_year']}")
             select.select_option(item["admission_year"])
+            admission_year_set = True
+            page.wait_for_timeout(300)
+
+    if not direction_set or not admission_year_set or not study_year_set:
+        log("Не все фильтры распознаны по тексту. Пробую fallback по порядку select")
+
+        # Обычно фильтры в таблице идут так:
+        # 0 — направление
+        # 1 — год набора
+        # 2 — учебный год
+        # 3 — дисциплина
+        try:
+            log(f"Fallback направление: {item['direction_code']}")
+            selects.nth(0).select_option(item["direction_code"])
+            page.wait_for_timeout(300)
+
+            log(f"Fallback год набора: {item['admission_year']}")
+            selects.nth(1).select_option(item["admission_year"])
+            page.wait_for_timeout(300)
+
+            log(f"Fallback учебный год: {item['study_year']}")
+            selects.nth(2).select_option(item["study_year"])
+            page.wait_for_timeout(300)
+
+        except Exception as e:
+            log(f"Fallback фильтров не сработал: {e}")
+            raise
 
     page.wait_for_timeout(500)
     select_discipline_filter_by_name(page, item["discipline"])
 
     log("Нажимаю 'Получить список РПД'")
     page.get_by_role("button", name="Получить список РПД").first.click()
-    page.wait_for_timeout(2000)
+    page.wait_for_timeout(2500)
 
 
 def get_filtered_row(page, item):
     log(f"Ищу строку РПД: {item['discipline']} / {item['admission_year']}")
 
-    rows = page.locator("tbody tr")
-    rows.first.wait_for(state="attached", timeout=5000)
+    for attempt in range(1, 6):
+        log(f"Попытка найти строку РПД: {attempt}/5")
 
-    for i in range(rows.count()):
-        row = rows.nth(i)
-        text = normalize_text(row.inner_text())
+        try:
+            rows = page.locator("tbody tr")
+            rows.first.wait_for(state="attached", timeout=7000)
 
-        if (
-            item["direction_code"] in text
-            and item["study_year"] in text
-            and item["admission_year"] in text
-            and item["discipline"] in text
-        ):
-            log("Строка РПД найдена")
-            return row
+            for i in range(rows.count()):
+                row = rows.nth(i)
+                text = normalize_text(row.inner_text())
 
-    raise Exception(f"Строка РПД не найдена: {item['discipline']}")
+                if (
+                    item["direction_code"] in text
+                    and item["study_year"] in text
+                    and item["admission_year"] in text
+                    and item["discipline"] in text
+                ):
+                    log("Строка РПД найдена")
+                    return row
+
+            log(f"Строки есть, но нужная не найдена. Всего строк: {rows.count()}")
+
+        except Exception as e:
+            log(f"Строка пока не найдена: {e}")
+
+        buttons = page.get_by_role("button", name="Получить список РПД")
+        if buttons.count() > 0:
+            log("Повторно нажимаю 'Получить список РПД'")
+            buttons.first.click(timeout=10000)
+
+        page.wait_for_timeout(2500)
+
+    raise Exception(f"Строка РПД не найдена после повторных попыток: {item['discipline']}")
 
 
 def extract_rpd_id_from_row(row):
@@ -494,39 +545,53 @@ def attach_user_to_rpd(page1, item):
 
     attached_any = False
 
+    log("Жду завершения копирования перед переходом к пользователям")
+    page1.wait_for_timeout(3000)
+
     log("Открываю вкладку 'Пользователи'")
     page1.get_by_role("link", name="Пользователи").click()
     page1.wait_for_timeout(1000)
 
     for user_name in user_names:
-        log(f"Ввожу пользователя: {user_name}")
+        user_attached = False
 
-        search_box = page1.get_by_role(
-            "textbox",
-            name="Введите Ф. И. О. или логин пользователя"
-        )
+        for attempt in range(1, 3):
+            log(f"Попытка привязать пользователя {attempt}/3: {user_name}")
 
-        search_box.click()
-        search_box.fill(user_name)
+            search_box = page1.get_by_role(
+                "textbox",
+                name="Введите Ф. И. О. или логин пользователя"
+            )
 
-        log("Нажимаю 'Найти'")
-        page1.get_by_role("button", name="Найти").click()
-        page1.wait_for_timeout(1500)
+            search_box.click()
+            search_box.fill("")
+            search_box.fill(user_name)
 
-        plus_buttons = page1.get_by_role("button", name="+")
-        count = plus_buttons.count()
+            log("Нажимаю 'Найти'")
+            page1.get_by_role("button", name="Найти").click()
+            page1.wait_for_timeout(1000)
 
-        log(f"Найдено кнопок '+' для добавления пользователя: {count}")
+            plus_buttons = page1.get_by_role("button", name="+")
+            count = plus_buttons.count()
 
-        if count == 0:
-            raise Exception(f"Не найден пользователь для привязки: {user_name}")
+            log(f"Найдено кнопок '+' для добавления пользователя: {count}")
 
-        log(f"Нажимаю '+' для привязки пользователя: {user_name}")
-        plus_buttons.first.click()
-        page1.wait_for_timeout(1000)
+            if count == 0:
+                page1.wait_for_timeout(1000)
+                continue
 
-        attached_any = True
-        log(f"Пользователь привязан: {user_name}")
+            log(f"Нажимаю '+' для привязки пользователя: {user_name}")
+            plus_buttons.first.click()
+            page1.wait_for_timeout(1000)
+
+            log(f"Пользователь привязан: {user_name}")
+            user_attached = True
+            attached_any = True
+            break   
+
+        if not user_attached:
+            log(f"ВНИМАНИЕ: пользователь не привязан после 3 попыток: {user_name}")
+            continue
 
     return attached_any
 
@@ -683,6 +748,7 @@ def run():
                 log("Нажимаю 'Создать программу'")
                 page.get_by_role("button", name=re.compile("Создать программу")).click()
                 created_ok = True
+                page.wait_for_timeout(1500)
 
                 log("Перехожу в 'Рабочие программы пользователя'")
                 page.get_by_role("link", name="Рабочие программы пользователя").click()
