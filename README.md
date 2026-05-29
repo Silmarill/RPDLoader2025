@@ -39,7 +39,7 @@ PASSWORD - пароль от eios
 LOG_DIR - папка с логами
 SLOW_MO - задержка перед каждым шагом в милисекундах
 INPUT_FILE - имя входного csv-файла
-INSTITUTE_ID - ID института
+INSTITUTE_ID - ID института, который реализует ОПОП
 ```
 
 
