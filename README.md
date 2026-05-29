@@ -34,12 +34,12 @@
 Используются параметры:
 
 ```python
-LOGIN
-PASSWORD
-LOG_DIR
-SLOW_MO
-INPUT_FILE
-INSTITUTE_ID
+LOGIN   - логин от eios
+PASSWORD - пароль от eios
+LOG_DIR - папка с логами
+SLOW_MO - задержка перед каждым шагом в милисекундах
+INPUT_FILE - имя входного csv-файла
+INSTITUTE_ID - ID института
 ```
 
 
